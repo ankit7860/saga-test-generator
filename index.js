@@ -1,65 +1,81 @@
-// const acorn = require('acorn');
 const fs = require('fs');
-
-// will give list of all generator methods.
 const esprima = require('esprima');
+const estraverse = require('estraverse');
+const escodegen = require('escodegen');
 const _ = require('underscore');
-var code = fs.readFileSync('sample.js', { encoding: 'utf-8'});
-var syntax = esprima.parse(code, { sourceType: 'module'});
-fs.writeFileSync('jsonTree.json', JSON.stringify(syntax));
+const fileName = 'sample.js';
 
-var funcs = [];
-_.each(syntax.body, function(i) {
-    if (i.type == 'FunctionDeclaration' && i.generator == true) {
-        var func = {name: i.id.name};
-        func.expressions = [];
-        _.each(i.body.body, function(j) {
-            if (j.type == 'ExpressionStatement' && j.expression.type == "YieldExpression") {
-                func.expressions.push(j.expression);
-            }
-        });
+console.log('starting..............');
 
-        funcs.push(func);
-    } else if (i.type == 'VariableDeclaration') {
-    // if (i.type == 'VariableDeclaration') {
-        _.each(i.declarations, function(j) {
-            if (j.init.type == 'FunctionExpression' && j.init.generator == true) {
-                var func = {name: j.id.name};
-                func.expressions = [];
-                _.each(j.init.body.body, function(expressions) {
-                    if (expressions.type == 'ExpressionStatement' && expressions.expression.type == "YieldExpression") {
-                        func.expressions.push(expressions.expression);
-                    }
-                });
-                funcs.push(func);
-            }
-        });
-    } else if (i.type == 'ExportDefaultDeclaration') {
-        // if (i.type == 'ExportDefaultDeclaration') {
-            if (i.declaration.type == 'FunctionDeclaration' && i.declaration.generator == true) {
-                var func = {name: i.declaration.id.name};
-                func.expressions = [];
-                _.each(i.declaration.body.body, function(expressions) {
-                    if (expressions.type == 'ExpressionStatement' && expressions.expression.type == "YieldExpression") {
-                        func.expressions.push(expressions.expression);
-                    }
-                });
-                funcs.push(func);
-                console.log(funcs);
-        }
+// generating AST tree for the required file
+const fileTreeGenerator = (fileName) => {
+  const fileContent = fs.readFileSync(fileName, { encoding: 'utf-8' });
+  fs.writeFileSync('jsonTree.json', JSON.stringify(fileContent));
+  return esprima.parse(fileContent, { sourceType: 'module' })
+}
+
+// getting all the generator functions
+const generatorFunctionExtractor = (asTree) => {
+  let result = [];
+  estraverse.traverse(asTree, {
+    enter: (node) => (((node.init && node.init.generator && node.type == 'VariableDeclarator') || (node.generator && node.type == 'FunctionDeclaration')) && result.push(node))
+  });
+  return result;
+}
+
+// convert tree to js Code if required
+const expressionToJsConvertor = (node) =>  escodegen.generate(node)
+
+// getting yield expression tree and yield expression params
+const yieldExpressionExtractor = (asTree) => {
+  let result = [];
+  estraverse.traverse(asTree, {
+    enter: (node) => {
+      let expressionCodes = [];
+      if (node.type == 'YieldExpression') {
+        expressionCodes.push(expressionToJsConvertor(node.argument));
+        result.push({'node': node, 'expressionCode': expressionCodes})
+      }
     }
-});
+  });
+  return result;
+}
 
-// console.log(funcs);
-fs.writeFileSync('funcs.json', JSON.stringify(funcs));
-var testTemplate = fs.readFileSync('testTemplate.js');
-var testContent = '';
-testContentString = JSON.stringify(testContent);
-fs.writeFileSync('saga-spec.js', JSON.parse(testContentString));
-// console.log(testContentString);
-var tpl = fs.readFileSync('testTemplate.js', 'utf-8');
-var initTemplate = _.template(tpl);
-// console.log(funcs);
-var finalTpl = initTemplate({funcs : funcs});
-// console.log(finalTpl);
-fs.writeFileSync('finalSpec.js', finalTpl);
+const generateTest = function(fileName) {
+  let fileTree = fileTreeGenerator(fileName);
+  fs.writeFileSync('jsonTree.json', JSON.stringify(fileTree));
+  let generators = generatorFunctionExtractor(fileTree);
+  
+  let yields = []; 
+  _.each(generators, function (generator) {
+    yields.push({'name': (generator.id)? generator.id.name : 'defalut','yieldExpressions': yieldExpressionExtractor(generator)});
+  })
+  
+  fs.writeFileSync('generatorsDetails.json', JSON.stringify(yields));
+  
+  var tpl = fs.readFileSync('testTemplate.js', 'utf-8');
+  var initTemplate = _.template(tpl);
+  var finalTpl = initTemplate({yields});
+  fs.writeFileSync('finalSpec.js', finalTpl);
+}
+
+
+fs.readdirSync('./').forEach(file => {
+  // put condition to check your required files
+  if (file === '') {
+   generateTest(file)
+ }
+})
+
+
+
+// we can use node-glob to get list of all the files
+// var glob = require("glob")
+
+// options is optional
+// glob("**/*.js", options, function (er, files) {
+  // files is an array of filenames.
+  // If the `nonull` option is set, and nothing
+  // was found, then files is ["**/*.js"]
+  // er is an error object or null.
+// })

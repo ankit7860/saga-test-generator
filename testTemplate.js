@@ -1,10 +1,12 @@
-import { put, take } from 'redux-saga/effects';
-import { cloneableGenerator } from 'redux-saga/utils';
-
-<% _(funcs).each(function(func) { %>
-    test('<%= func.name%>', assert => {
-    const gen = cloneableGenerator(<%=func.name%>)();
-    <% _(func.expressions).each(function(expression) { %>
-    gen.next(); <% if(expression.argument.arguments[0].callee) { %> // <%= JSON.stringify(expression.argument.arguments[0].callee.name)%><%}%>    <% }) %>
-});
+<% _(yields).each(function(yield) { %>
+    describe('when testing <%= yield.name%>', () => {
+        <% _(yield.yieldExpressions).each(function(yieldExpression) { %>
+        it('should return required result', ()=> {
+            const next = generator.next().value;
+            const action = <%=yieldExpression.expressionCode%>;
+            expect(next).toEqual(action);
+        })
+        <% }) %>
+    }
 <% }) %>
+
